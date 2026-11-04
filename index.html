@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Annual Leave Planner</title>
+<meta name="description" content="Plan your annual leave on a calendar. Mark annual, half, sick, holiday and other days, see what's left of your allowance, and export the totals to Excel or CSV. Runs in your browser, nothing is uploaded.">
+<meta name="theme-color" content="#0f6b63">
+<meta property="og:title" content="Annual Leave Planner">
+<meta property="og:description" content="Mark your days off on a calendar, see what's left, export the totals to Excel.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://azaki9.github.io/annual-leave-planner/">
+<meta property="og:image" content="https://azaki9.github.io/annual-leave-planner/docs/screenshot-light.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='5' width='26' height='24' rx='4' fill='%230f6b63'/%3E%3Crect x='3' y='5' width='26' height='7' rx='3' fill='%230b4f49'/%3E%3Crect x='8' y='16' width='5' height='4' rx='1' fill='%23fff'/%3E%3Crect x='14' y='16' width='5' height='4' rx='1' fill='%23fff'/%3E%3Crect x='20' y='16' width='5' height='4' rx='1' fill='%23d29b19'/%3E%3Crect x='8' y='22' width='5' height='4' rx='1' fill='%23fff' opacity='.5'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  /* Layout: a wall-planner grid of months on the left, a sticky tally sheet on the right; stacks below 980px. */
+  --bg: #f3f5f2; --surface: #ffffff; --ink: #18232b; --muted: #5b6770; --line: #d9dfdc;
+  --hover: #e4ebe8; --weekend: #e8ebe7;
+  --annual: #0f6b63; --annual-soft: #d3ebe7; --annual-strong: #0b4f49;
+  --sick: #c4523b; --holiday: #d29b19; --other: #6e5fa6;
+  --on-fill: #ffffff; --on-holiday: #2b1f00;
+  --danger: #b3261e; --focus: #1d5fd1;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161a; --surface: #182026; --ink: #e4eae7; --muted: #97a3a0; --line: #2a353b;
+    --hover: #223038; --weekend: #141b20;
+    --annual: #43b7aa; --annual-soft: #173a37; --annual-strong: #8fe0d6;
+    --sick: #ec7f68; --holiday: #e8b84a; --other: #a898e0;
+    --on-fill: #0c1214; --on-holiday: #1d1600;
+    --danger: #ff8a80; --focus: #7aa7ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161a; --surface: #182026; --ink: #e4eae7; --muted: #97a3a0; --line: #2a353b;
+  --hover: #223038; --weekend: #141b20;
+  --annual: #43b7aa; --annual-soft: #173a37; --annual-strong: #8fe0d6;
+  --sick: #ec7f68; --holiday: #e8b84a; --other: #a898e0;
+  --on-fill: #0c1214; --on-holiday: #1d1600;
+  --danger: #ff8a80; --focus: #7aa7ff;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.5 var(--body); }
+.foot { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+.foot a { color: var(--annual-strong); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap {
+  max-width: 1440px; margin: 0 auto;
+  padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
+h2 { font-size: 15px; font-weight: 600; }
+.lede { margin: 4px 0 0; color: var(--muted); }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Header and period */
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; margin-bottom: 20px; }
+.period { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 0; }
+.field { display: grid; gap: 4px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.field > span, .field > legend { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 0; }
+.field input, .field select {
+  height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); font-family: var(--mono); font-size: 13px;
+}
+.field select { font-family: var(--body); font-size: 14px; }
+.chips { display: flex; gap: 4px; }
+.chip {
+  width: 34px; height: 36px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); cursor: pointer; font-size: 12px; font-weight: 500;
+}
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.err { width: 100%; margin: 0; color: var(--danger); font-weight: 500; }
+
+/* Main layout */
+.layout { display: grid; gap: 24px; align-items: start; }
+@media (min-width: 980px) { .layout { grid-template-columns: minmax(0, 1fr) 340px; } }
+main { min-width: 0; }
+
+.toolbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
+  padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.brushes { display: flex; flex-wrap: wrap; gap: 6px; }
+.brush {
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 10px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; font-weight: 500;
+}
+.brush:hover { background: var(--hover); }
+.brush[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.brush kbd { font: 500 11px var(--mono); color: var(--muted); }
+.sw { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+.sw.annual { background: var(--annual); }
+.sw.half { background: var(--annual-soft); box-shadow: inset 0 0 0 2px var(--annual); }
+.sw.sick { background: var(--sick); }
+.sw.holiday { background: var(--holiday); }
+.sw.other { background: var(--other); }
+.sw.erase { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--muted); position: relative; }
+.sw.erase::after { content: ""; position: absolute; left: 2px; right: 2px; top: 6px; height: 1.5px; background: var(--muted); transform: rotate(-45deg); }
+.pill { font: 500 13px var(--mono); padding: 6px 10px; border-radius: 6px; background: var(--annual-soft); color: var(--annual-strong); white-space: nowrap; }
+.pill.over { background: var(--danger); color: var(--on-fill); }
+.hint { margin: 10px 0 16px; color: var(--muted); font-size: 13px; }
+
+.banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 10px 12px; margin-bottom: 16px; border: 1px dashed var(--holiday); border-radius: 8px; font-weight: 500;
+}
+.banner-actions { display: flex; gap: 8px; }
+
+/* Months */
+.months { display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 16px; }
+.month { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+.mhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.mname { font-family: var(--display); font-weight: 600; font-size: 15px; }
+.mname span { color: var(--muted); font-weight: 600; }
+.mcount { font: 500 12px var(--mono); color: var(--annual-strong); }
+.grid7 { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.wd { text-align: center; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.04em; padding-bottom: 2px; }
+.wd.we { opacity: 0.55; }
+.day {
+  aspect-ratio: 1; max-width: 100%; display: grid; place-items: center; position: relative;
+  border: 0; border-radius: 5px; background: transparent; padding: 0;
+  font: 500 13px var(--mono); font-variant-numeric: tabular-nums; user-select: none; -webkit-user-select: none;
+}
+button.day { cursor: pointer; }
+button.day:hover { background: var(--hover); }
+.day.we { background: var(--weekend); color: var(--muted); opacity: 0.8; }
+.day.out { color: var(--muted); opacity: 0.3; }
+.day.today::after { content: ""; position: absolute; bottom: 3px; width: 10px; height: 2px; border-radius: 1px; background: currentColor; }
+.day[data-t="annual"] { background: var(--annual); color: var(--on-fill); }
+.day[data-t="half"] { background: var(--annual-soft); color: var(--annual-strong); box-shadow: inset 0 0 0 2px var(--annual); }
+.day[data-t="sick"] { background: var(--sick); color: var(--on-fill); }
+.day[data-t="holiday"] { background: var(--holiday); color: var(--on-holiday); }
+.day[data-t="other"] { background: var(--other); color: var(--on-fill); }
+button.day[data-t]:not([data-t=""]):hover { filter: brightness(1.08); }
+
+/* Summary */
+.summary { display: grid; gap: 12px; min-width: 0; }
+@media (min-width: 980px) {
+  .summary { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); max-height: calc(100vh - 32px); overflow-y: auto; padding-right: 2px; }
+}
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.sub { margin: 0; color: var(--muted); font-size: 12.5px; }
+.allow-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.allow-row label { font-weight: 600; }
+.num-input { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.num-input input { width: 72px; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-family: var(--mono); text-align: right; }
+.big { display: flex; align-items: baseline; gap: 8px; }
+.big-num { font: 700 48px/1 var(--display); color: var(--annual); font-variant-numeric: tabular-nums; }
+.big-label { color: var(--muted); font-weight: 500; }
+.allowance.over .big-num { color: var(--danger); }
+.meter { height: 8px; border-radius: 4px; background: var(--annual-soft); overflow: hidden; }
+.meter span { display: block; height: 100%; width: 0; background: var(--annual); border-radius: 4px; transition: width 200ms ease-out; }
+.allowance.over .meter span { background: var(--danger); }
+.meter-cap { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+.totals { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: baseline; }
+.totals dt { display: flex; align-items: center; gap: 8px; }
+.totals dt small { color: var(--muted); font-size: 12px; }
+.totals dd { margin: 0; font: 500 14px var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.totals .rule { grid-column: 1 / -1; height: 1px; background: var(--line); }
+.totals .strong { font-weight: 600; }
+
+.blocks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.blocks li { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.blocks li:last-child { border-bottom: 0; padding-bottom: 0; }
+.blocks .range { font-weight: 600; }
+.blocks .meta { font-size: 12.5px; color: var(--muted); }
+.blocks .empty { color: var(--muted); border: 0; }
+
+.tablewrap { overflow-x: auto; }
+.bymonth { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.bymonth th { text-align: right; font-weight: 600; color: var(--muted); font-size: 11px; letter-spacing: 0.04em; padding: 0 0 6px 8px; }
+.bymonth th:first-child, .bymonth td:first-child { text-align: left; padding-left: 0; }
+.bymonth td { text-align: right; padding: 3px 0 3px 8px; font-family: var(--mono); font-variant-numeric: tabular-nums; border-top: 1px solid var(--line); }
+.bymonth td:first-child { font-family: var(--body); }
+.bymonth td.zero { color: var(--muted); opacity: 0.5; }
+.bymonth tfoot td { font-weight: 600; border-top: 2px solid var(--ink); }
+
+.export, .tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; font-weight: 500; font-size: 13px;
+}
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--annual); color: var(--on-fill); border-color: var(--annual); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--danger); }
+.btn.danger.arm { background: var(--danger); color: var(--on-fill); border-color: var(--danger); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.file { position: relative; overflow: hidden; }
+.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.file:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+textarea { width: 100%; font: 12px/1.45 var(--mono); padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); resize: vertical; }
+.status { margin: 0; min-height: 1.5em; font-size: 13px; font-weight: 500; color: var(--annual-strong); }
+.status.bad { color: var(--danger); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="head">
+    <div>
+      <h1>Annual Leave Planner</h1>
+      <p class="lede">Set a period, mark your days off, then export the totals.</p>
+    </div>
+    <form class="period" id="periodForm">
+      <label class="field"><span>From</span><input type="date" id="start" required></label>
+      <label class="field"><span>To</span><input type="date" id="end" required></label>
+      <label class="field"><span>Week starts</span>
+        <select id="weekStart"><option value="0">Sunday</option><option value="1">Monday</option><option value="6">Saturday</option></select>
+      </label>
+      <fieldset class="field"><legend>Weekend</legend><div class="chips" id="weekendChips"></div></fieldset>
+    </form>
+    <p class="err" id="periodErr" hidden></p>
+  </header>
+
+  <div class="layout">
+    <main>
+      <div class="toolbar">
+        <div class="brushes" id="brushes" role="group" aria-label="Mark days as"></div>
+        <div class="pill" id="remainingPill"></div>
+      </div>
+      <p class="hint">Click a day to mark it, click it again to clear it. Drag across days to mark several. Shift-click to fill every working day between two days. Keys 1 to 5 pick a type, 0 picks the eraser. Weekends are never counted.</p>
+      <div class="banner" id="exampleBanner" hidden>
+        <span>These are example days so you can see how it works.</span>
+        <div class="banner-actions">
+          <button type="button" class="btn" id="clearExamples">Clear examples</button>
+          <button type="button" class="btn ghost" id="keepExamples">Keep them</button>
+        </div>
+      </div>
+      <div class="months" id="months"></div>
+    </main>
+
+    <aside class="summary" aria-label="Summary">
+      <section class="card allowance" id="allowanceCard">
+        <div class="allow-row">
+          <label for="allowance">Annual allowance</label>
+          <div class="num-input"><input id="allowance" type="number" min="0" max="365" step="0.5"><span>days</span></div>
+        </div>
+        <div class="big"><span class="big-num" id="remaining">0</span><span class="big-label" id="remainingLabel">days left</span></div>
+        <div class="meter" aria-hidden="true"><span id="meterFill"></span></div>
+        <p class="meter-cap" id="meterCap"></p>
+      </section>
+
+      <section class="card">
+        <h2>Totals</h2>
+        <dl class="totals" id="totals"></dl>
+      </section>
+
+      <section class="card">
+        <h2>Time away</h2>
+        <p class="sub">Each break, counted with the weekends and holidays around it.</p>
+        <ol class="blocks" id="blocks"></ol>
+      </section>
+
+      <section class="card">
+        <h2>By month</h2>
+        <div class="tablewrap"><table class="bymonth" id="byMonth"></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Export</h2>
+        <div class="export">
+          <button type="button" class="btn primary" id="dlXlsx">Download Excel</button>
+          <button type="button" class="btn" id="dlCsv">Download CSV</button>
+          <button type="button" class="btn" id="copySummary">Copy summary</button>
+        </div>
+        <p class="sub">The Excel file has four sheets: Summary, By month, Time away and Days. The CSV lists each marked day and can be loaded back here.</p>
+        <textarea id="copyFallback" rows="9" readonly hidden></textarea>
+        <div class="tools">
+          <label class="btn ghost file">Load a saved CSV<input type="file" id="importCsv" accept=".csv,text/csv"></label>
+          <button type="button" class="btn ghost" id="addNational">Add Founding Day and National Day</button>
+          <button type="button" class="btn ghost danger" id="clearAll">Clear all marks</button>
+        </div>
+        <p class="sub">Eid holidays follow the Hijri calendar. Mark them as public holidays once the dates are announced.</p>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </section>
+    </aside>
+  </div>
+  <footer class="foot">
+    <span>Your plan is saved in this browser only. Nothing is uploaded anywhere.</span>
+    <a href="https://github.com/Azaki9/annual-leave-planner">Source on GitHub</a>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const TYPES = {
+    annual:  { label: 'Annual leave',   units: 1 },
+    half:    { label: 'Half day',       units: 0.5 },
+    sick:    { label: 'Sick leave',     units: 1 },
+    holiday: { label: 'Public holiday', units: 1 },
+    other:   { label: 'Other / unpaid', units: 1 },
+  };
+  const BRUSHES = ['annual', 'half', 'sick', 'holiday', 'other', 'erase'];
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const DAY = 86400000;
+  const MAX_MONTHS = 36;
+  const STORE = 'annual-leave-planner-v1';
+
+  const $ = s => document.querySelector(s);
+  const pad = n => String(n).padStart(2, '0');
+  const key = d => d.toISOString().slice(0, 10);
+  const parse = k => { const [y, m, d] = k.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+  const fmtN = n => Number.isInteger(n) ? String(n) : n.toFixed(1);
+  const days = n => `${fmtN(n)} day${n === 1 ? '' : 's'}`;
+  const mon = d => MONTHS[d.getUTCMonth()].slice(0, 3);
+  const fmtLong = d => `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${mon(d)} ${d.getUTCFullYear()}`;
+  const todayKey = (() => { const t = new Date(); return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`; })();
+  function* eachDay(a, b) { for (let t = parse(a).getTime(), e = parse(b).getTime(); t <= e; t += DAY) yield new Date(t); }
+
+  function exampleMarks() {
+    const m = {};
+    const run = (a, b, t) => { for (const d of eachDay(a, b)) if (d.getUTCDay() !== 5 && d.getUTCDay() !== 6) m[key(d)] = t; };
+    run('2027-02-14', '2027-02-18', 'annual');
+    m['2027-02-22'] = 'holiday';
+    m['2027-04-04'] = 'half';
+    run('2027-06-01', '2027-06-02', 'sick');
+    run('2027-08-01', '2027-08-12', 'annual');
+    m['2027-09-23'] = 'holiday';
+    return m;
+  }
+  const DEFAULTS = () => ({ start: '2027-01-01', end: '2027-12-31', weekStart: 0, weekend: [5, 6], allowance: 21, brush: 'annual', marks: exampleMarks(), example: true });
+
+  let S = (() => {
+    try {
+      const raw = localStorage.getItem(STORE);
+      if (raw) { const o = JSON.parse(raw); if (o && typeof o === 'object') return Object.assign(DEFAULTS(), o); }
+    } catch (e) {}
+    return DEFAULTS();
+  })();
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} };
+
+  const isWorking = d => !S.weekend.includes(d.getUTCDay());
+  const inPeriod = k => k >= S.start && k <= S.end;
+
+  function setStatus(msg, bad) { const el = $('#status'); el.textContent = msg; el.classList.toggle('bad', !!bad); }
+
+  /* ---------- Controls ---------- */
+  function renderControls() {
+    $('#start').value = S.start; $('#end').value = S.end;
+    $('#weekStart').value = String(S.weekStart);
+    $('#allowance').value = S.allowance;
+    const chips = $('#weekendChips'); chips.textContent = '';
+    for (let i = 0; i < 7; i++) {
+      const wd = (S.weekStart + i) % 7;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.id = 'we' + wd;
+      b.textContent = WD[wd].slice(0, 2);
+      b.setAttribute('aria-label', WD[wd] + ' is a weekend day');
+      b.setAttribute('aria-pressed', S.weekend.includes(wd));
+      b.addEventListener('click', () => {
+        S.weekend = S.weekend.includes(wd) ? S.weekend.filter(x => x !== wd) : [...S.weekend, wd];
+        save(); renderControls(); renderCalendar(); renderSummary();
+      });
+      chips.appendChild(b);
+    }
+    const br = $('#brushes'); br.textContent = '';
+    BRUSHES.forEach((t, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'brush'; b.id = 'brush-' + t;
+      b.setAttribute('aria-pressed', S.brush === t);
+      b.innerHTML = `<span class="sw ${t}"></span>${t === 'erase' ? 'Eraser' : TYPES[t].label}<kbd>${t === 'erase' ? 0 : i + 1}</kbd>`;
+      b.addEventListener('click', () => setBrush(t));
+      br.appendChild(b);
+    });
+  }
+  function setBrush(t) {
+    S.brush = t; save();
+    document.querySelectorAll('.brush').forEach(b => b.setAttribute('aria-pressed', b.id === 'brush-' + t));
+  }
+
+  function applyPeriod() {
+    const s = $('#start').value, e = $('#end').value, err = $('#periodErr');
+    let msg = '';
+    if (!s || !e) msg = 'Pick both a start and an end date.';
+    else if (e < s) msg = 'The end date is before the start date.';
+    else {
+      const a = parse(s), b = parse(e);
+      const span = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth() + 1;
+      if (span > MAX_MONTHS) msg = `Pick a period of ${MAX_MONTHS} months or less.`;
+    }
+    err.textContent = msg; err.hidden = !msg;
+    if (msg) return;
+    S.start = s; S.end = e; save(); renderCalendar(); renderSummary();
+  }
+  $('#start').addEventListener('change', applyPeriod);
+  $('#end').addEventListener('change', applyPeriod);
+  $('#periodForm').addEventListener('submit', e => e.preventDefault());
+  $('#weekStart').addEventListener('change', e => { S.weekStart = Number(e.target.value); save(); renderControls(); renderCalendar(); });
+  $('#allowance').addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    if (!isNaN(v) && v >= 0) { S.allowance = v; save(); renderSummary(); }
+  });
+
+  /* ---------- Calendar ---------- */
+  function dayLabel(d, t) { return fmtLong(d) + (t ? ', ' + TYPES[t].label : ''); }
+
+  function renderCalendar() {
+    const host = $('#months'); host.textContent = '';
+    const s = parse(S.start), e = parse(S.end);
+    let y = s.getUTCFullYear(), m = s.getUTCMonth();
+    const frag = document.createDocumentFragment();
+    while (y < e.getUTCFullYear() || (y === e.getUTCFullYear() && m <= e.getUTCMonth())) {
+      const mk = `${y}-${pad(m + 1)}`;
+      const sec = document.createElement('section');
+      sec.className = 'month';
+      sec.innerHTML = `<div class="mhead"><div class="mname">${MONTHS[m]} <span>${y}</span></div><div class="mcount" data-m="${mk}"></div></div>`;
+      const g = document.createElement('div'); g.className = 'grid7';
+      for (let i = 0; i < 7; i++) {
+        const wd = (S.weekStart + i) % 7;
+        const h = document.createElement('div');
+        h.className = 'wd' + (S.weekend.includes(wd) ? ' we' : '');
+        h.textContent = WD[wd].slice(0, 2);
+        g.appendChild(h);
+      }
+      const first = new Date(Date.UTC(y, m, 1));
+      const lead = (first.getUTCDay() - S.weekStart + 7) % 7;
+      for (let i = 0; i < lead; i++) g.appendChild(document.createElement('span'));
+      const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      for (let dn = 1; dn <= last; dn++) {
+        const d = new Date(Date.UTC(y, m, dn)), k = key(d);
+        let c;
+        if (!inPeriod(k) || !isWorking(d)) {
+          c = document.createElement('span');
+          c.className = 'day ' + (inPeriod(k) ? 'we' : 'out');
+          c.setAttribute('aria-hidden', 'true');
+        } else {
+          c = document.createElement('button');
+          c.type = 'button'; c.className = 'day'; c.dataset.k = k;
+          const t = TYPES[S.marks[k]] ? S.marks[k] : '';
+          c.dataset.t = t;
+          c.setAttribute('aria-label', dayLabel(d, t));
+        }
+        if (k === todayKey) c.classList.add('today');
+        c.textContent = dn;
+        g.appendChild(c);
+      }
+      sec.appendChild(g);
+      frag.appendChild(sec);
+      if (++m > 11) { m = 0; y++; }
+    }
+    host.appendChild(frag);
+  }
+
+  function paint(btn) {
+    const k = btn.dataset.k, t = TYPES[S.marks[k]] ? S.marks[k] : '';
+    btn.dataset.t = t;
+    btn.setAttribute('aria-label', dayLabel(parse(k), t));
+  }
+  function apply(k, mode) {
+    if (mode === 'erase') delete S.marks[k]; else S.marks[k] = S.brush;
+    const b = document.querySelector(`button.day[data-k="${k}"]`);
+    if (b) paint(b);
+  }
+  function commit() { save(); renderSummary(); }
+  function fillRange(a, b) {
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    for (const d of eachDay(lo, hi)) {
+      const k = key(d);
+      if (inPeriod(k) && isWorking(d)) apply(k, S.brush === 'erase' ? 'erase' : 'paint');
+    }
+    commit();
+  }
+
+  let drag = null, lastKey = null;
+  const grid = $('#months');
+  grid.addEventListener('pointerdown', e => {
+    const b = e.target.closest('button.day');
+    if (!b || e.button !== 0) return;
+    const k = b.dataset.k;
+    e.preventDefault();
+    b.focus({ preventScroll: true });
+    if (e.shiftKey && lastKey) { fillRange(lastKey, k); lastKey = k; return; }
+    const mode = (S.brush === 'erase' || S.marks[k] === S.brush) ? 'erase' : 'paint';
+    apply(k, mode); lastKey = k;
+    if (e.pointerType === 'touch') { commit(); return; }
+    drag = { mode, last: k };
+    grid.setPointerCapture(e.pointerId);
+  });
+  grid.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const t = document.elementFromPoint(e.clientX, e.clientY);
+    const b = t && t.closest ? t.closest('button.day') : null;
+    if (!b || b.dataset.k === drag.last) return;
+    apply(b.dataset.k, drag.mode); drag.last = b.dataset.k;
+  });
+  const endDrag = () => { if (drag) { drag = null; commit(); } };
+  grid.addEventListener('pointerup', endDrag);
+  grid.addEventListener('pointercancel', endDrag);
+  grid.addEventListener('click', e => {
+    if (e.detail !== 0) return; // keyboard activation only; pointer handled above
+    const b = e.target.closest('button.day'); if (!b) return;
+    const k = b.dataset.k;
+    if (e.shiftKey && lastKey) { fillRange(lastKey, k); lastKey = k; return; }
+    apply(k, (S.brush === 'erase' || S.marks[k] === S.brush) ? 'erase' : 'paint');
+    lastKey = k; commit();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target.matches('input, select, textarea')) return;
+    const i = '123450'.indexOf(e.key);
+    if (i >= 0) setBrush(BRUSHES[i]);
+  });
+
+  /* ---------- Summary ---------- */
+  function compute() {
+    const tot = { annual: 0, half: 0, sick: 0, holiday: 0, other: 0 };
+    const months = new Map(), list = [], seq = [];
+    let working = 0;
+    for (const d of eachDay(S.start, S.end)) {
+      const k = key(d), mk = k.slice(0, 7);
+      if (!months.has(mk)) months.set(mk, { annual: 0, sick: 0, holiday: 0, other: 0 });
+      if (!isWorking(d)) { seq.push({ d, s: 'off' }); continue; }
+      working++;
+      const t = TYPES[S.marks[k]] ? S.marks[k] : null;
+      if (!t) { seq.push({ d, s: 'work' }); continue; }
+      tot[t]++;
+      const row = months.get(mk);
+      if (t === 'annual' || t === 'half') row.annual += TYPES[t].units; else row[t]++;
+      list.push({ k, d, t });
+      seq.push({ d, s: t === 'holiday' ? 'off' : 'leave', t });
+    }
+    // A break is a run of non-working days that holds at least one day of leave.
+    const blocks = [];
+    let cur = null;
+    const close = () => { if (cur && cur.leave) blocks.push(cur); cur = null; };
+    for (const x of seq) {
+      if (x.s === 'work') { close(); continue; }
+      if (!cur) cur = { from: x.d, to: x.d, len: 0, annual: 0, sick: 0, other: 0, leave: false };
+      cur.to = x.d; cur.len++;
+      if (x.s === 'leave') {
+        cur.leave = true;
+        if (x.t === 'annual' || x.t === 'half') cur.annual += TYPES[x.t].units; else cur[x.t]++;
+      }
+    }
+    close();
+    const annualUsed = tot.annual + tot.half * 0.5;
+    return { tot, annualUsed, working, months, list, blocks, daysOff: annualUsed + tot.sick + tot.holiday + tot.other };
+  }
+
+  function fmtRange(a, b) {
+    if (+a === +b) return fmtLong(a);
+    const sameY = a.getUTCFullYear() === b.getUTCFullYear();
+    if (sameY && a.getUTCMonth() === b.getUTCMonth()) return `${a.getUTCDate()}–${b.getUTCDate()} ${mon(a)} ${a.getUTCFullYear()}`;
+    if (sameY) return `${a.getUTCDate()} ${mon(a)} – ${b.getUTCDate()} ${mon(b)} ${a.getUTCFullYear()}`;
+    return `${a.getUTCDate()} ${mon(a)} ${a.getUTCFullYear()} – ${b.getUTCDate()} ${mon(b)} ${b.getUTCFullYear()}`;
+  }
+  function blockParts(b) {
+    const p = [];
+    if (b.annual) p.push(`${fmtN(b.annual)} annual`);
+    if (b.sick) p.push(`${b.sick} sick`);
+    if (b.other) p.push(`${b.other} other`);
+    return p.join(', ');
+  }
+  const monthName = mk => { const [y, m] = mk.split('-').map(Number); return `${MONTHS[m - 1]} ${y}`; };
+
+  let last = null;
+  function renderSummary() {
+    const c = compute(); last = c;
+    const rem = S.allowance - c.annualUsed, over = rem < 0;
+    $('#allowanceCard').classList.toggle('over', over);
+    $('#remaining').textContent = fmtN(Math.abs(rem));
+    $('#remainingLabel').textContent = over ? (rem === -1 ? 'day over allowance' : 'days over allowance') : (rem === 1 ? 'day left' : 'days left');
+    $('#meterFill').style.width = (S.allowance > 0 ? Math.min(100, c.annualUsed / S.allowance * 100) : (c.annualUsed ? 100 : 0)) + '%';
+    $('#meterCap').textContent = `${fmtN(c.annualUsed)} of ${days(S.allowance)} of annual leave planned`;
+    const pill = $('#remainingPill');
+    pill.textContent = over ? `${fmtN(-rem)} over allowance` : `${fmtN(rem)} of ${fmtN(S.allowance)} left`;
+    pill.classList.toggle('over', over);
+
+    const row = (sw, label, val, note, cls) =>
+      `<dt class="${cls || ''}">${sw ? `<span class="sw ${sw}"></span>` : ''}${label}${note ? ` <small>${note}</small>` : ''}</dt><dd class="${cls || ''}">${val}</dd>`;
+    $('#totals').innerHTML =
+      row('annual', 'Annual leave', fmtN(c.annualUsed), c.tot.half ? `incl. ${c.tot.half} half day${c.tot.half === 1 ? '' : 's'}` : '') +
+      row('sick', 'Sick leave', c.tot.sick) +
+      row('holiday', 'Public holidays', c.tot.holiday) +
+      row('other', 'Other / unpaid', c.tot.other) +
+      '<div class="rule"></div>' +
+      row('', 'Total days off', fmtN(c.daysOff), '', 'strong') +
+      row('', 'Working days in period', c.working);
+
+    const bl = $('#blocks');
+    bl.innerHTML = c.blocks.length
+      ? c.blocks.map(b => `<li><span class="range">${fmtRange(b.from, b.to)}</span><span class="meta">${days(b.len)} away · ${blockParts(b)}</span></li>`).join('')
+      : '<li class="empty">No leave marked in this period yet.</li>';
+
+    const cell = v => `<td class="${v ? '' : 'zero'}">${fmtN(v)}</td>`;
+    const sum = { annual: 0, sick: 0, holiday: 0, other: 0 };
+    let body = '';
+    for (const [mk, r] of c.months) {
+      for (const t in sum) sum[t] += r[t];
+      body += `<tr><td>${monthName(mk).replace(/(\w{3})\w*/, '$1')}</td>${cell(r.annual)}${cell(r.sick)}${cell(r.holiday)}${cell(r.other)}</tr>`;
+    }
+    $('#byMonth').innerHTML = `<thead><tr><th>Month</th><th>Annual</th><th>Sick</th><th>Hol.</th><th>Other</th></tr></thead><tbody>${body}</tbody>` +
+      `<tfoot><tr><td>Total</td><td>${fmtN(sum.annual)}</td><td>${sum.sick}</td><td>${sum.holiday}</td><td>${sum.other}</td></tr></tfoot>`;
+
+    document.querySelectorAll('.mcount').forEach(el => {
+      const r = c.months.get(el.dataset.m);
+      const n = r ? r.annual + r.sick + r.holiday + r.other : 0;
+      el.textContent = n ? `${fmtN(n)} off` : '';
+    });
+    $('#exampleBanner').hidden = !S.example;
+  }
+
+  /* ---------- Example banner, clear, holidays ---------- */
+  $('#clearExamples').addEventListener('click', () => { S.marks = {}; S.example = false; save(); renderCalendar(); renderSummary(); setStatus('Examples cleared. Start marking your days.'); });
+  $('#keepExamples').addEventListener('click', () => { S.example = false; save(); renderSummary(); });
+
+  let armTimer = null;
+  $('#clearAll').addEventListener('click', e => {
+    const b = e.currentTarget;
+    if (!b.classList.contains('arm')) {
+      b.classList.add('arm'); b.textContent = 'Click again to clear';
+      armTimer = setTimeout(() => { b.classList.remove('arm'); b.textContent = 'Clear all marks'; }, 4000);
+      return;
+    }
+    clearTimeout(armTimer);
+    b.classList.remove('arm'); b.textContent = 'Clear all marks';
+    S.marks = {}; S.example = false; save(); renderCalendar(); renderSummary(); setStatus('All marks cleared.');
+  });
+
+  $('#addNational').addEventListener('click', () => {
+    let n = 0;
+    for (let y = parse(S.start).getUTCFullYear(); y <= parse(S.end).getUTCFullYear(); y++) {
+      for (const k of [`${y}-02-22`, `${y}-09-23`]) {
+        if (inPeriod(k) && isWorking(parse(k)) && S.marks[k] !== 'holiday') { S.marks[k] = 'holiday'; n++; }
+      }
+    }
+    save(); renderCalendar(); renderSummary();
+    setStatus(n ? `Marked ${n} public holiday${n === 1 ? '' : 's'}.` : 'Nothing to add. Those days are already marked or fall on a weekend.');
+  });
+
+  /* ---------- Export ---------- */
+  const weekendNames = () => S.weekend.slice().sort((a, b) => ((a - S.weekStart + 7) % 7) - ((b - S.weekStart + 7) % 7)).map(i => WD[i]).join(', ') || 'None';
+
+  function summaryRows(c) {
+    return [
+      ['Leave plan'], [],
+      ['From', fmtLong(parse(S.start))],
+      ['To', fmtLong(parse(S.end))],
+      ['Weekend', weekendNames()],
+      [],
+      ['Item', 'Days'],
+      ['Annual allowance', S.allowance],
+      ['Annual leave used', c.annualUsed],
+      ['Half days (count)', c.tot.half],
+      ['Annual leave remaining', S.allowance - c.annualUsed],
+      ['Sick leave', c.tot.sick],
+      ['Public holidays', c.tot.holiday],
+      ['Other / unpaid', c.tot.other],
+      ['Total days off', c.daysOff],
+      ['Working days in period', c.working],
+    ];
+  }
+  function monthRows(c) {
+    const rows = [['Month', 'Annual', 'Sick', 'Public holiday', 'Other / unpaid', 'Total']];
+    const sum = [0, 0, 0, 0];
+    for (const [mk, r] of c.months) {
+      const v = [r.annual, r.sick, r.holiday, r.other];
+      v.forEach((x, i) => sum[i] += x);
+      rows.push([monthName(mk), ...v, v.reduce((a, b) => a + b, 0)]);
+    }
+    rows.push(['Total', ...sum, sum.reduce((a, b) => a + b, 0)]);
+    return rows;
+  }
+  function blockRows(c) {
+    return [['From', 'To', 'Days away', 'Annual days', 'Sick days', 'Other days'],
+      ...c.blocks.map(b => [fmtLong(b.from), fmtLong(b.to), b.len, b.annual, b.sick, b.other])];
+  }
+  function dayRows(c) {
+    return [['Date', 'Weekday', 'Type', 'Days counted'],
+      ...c.list.map(x => [x.k, WD[x.d.getUTCDay()], TYPES[x.t].label, TYPES[x.t].units])];
+  }
+
+  const downloadsP = (window.claude && typeof window.claude.use === 'function')
+    ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+  if (typeof XLSX === 'undefined') { $('#dlXlsx').disabled = true; $('#dlXlsx').title = 'The Excel library did not load. Use CSV instead.'; }
+
+  async function offer(filename, data) {
+    const dl = await downloadsP;
+    if (!dl) { browserSave(filename, data); return; }
+    try {
+      await dl.save({ filename, data });
+      setStatus(`Saved ${filename}.`);
+    } catch (err) {
+      const code = err && err.code;
+      if (code === 'declined') setStatus('Download cancelled.');
+      else if (code === 'rate_limited') setStatus('A download prompt is already open. Finish that one first.', true);
+      else setStatus(`Couldn’t save the file: ${(err && err.message) || code || 'unknown error'}.`, true);
+    }
+  }
+  function browserSave(filename, data) {
+    try {
+      const type = filename.endsWith('.csv') ? 'text/csv;charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setStatus(`Downloaded ${filename}.`);
+    } catch (err) {
+      setStatus('Your browser blocked the download. Use Copy summary instead.', true);
+    }
+  }
+  const baseName = () => `leave-plan ${S.start} to ${S.end}`;
+
+  $('#dlXlsx').addEventListener('click', () => {
+    const c = compute();
+    const wb = XLSX.utils.book_new();
+    const add = (name, rows, cols) => {
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = cols.map(w => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    };
+    add('Summary', summaryRows(c), [26, 22]);
+    add('By month', monthRows(c), [18, 10, 8, 15, 15, 8]);
+    add('Time away', blockRows(c), [18, 18, 11, 12, 10, 11]);
+    add('Days', dayRows(c), [12, 10, 16, 13]);
+    offer(baseName() + '.xlsx', XLSX.write(wb, { bookType: 'xlsx', type: 'array' }));
+  });
+
+  const csvCell = v => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  $('#dlCsv').addEventListener('click', () => {
+    const csv = '﻿' + dayRows(compute()).map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    offer(baseName() + '.csv', csv);
+  });
+
+  function summaryText(c) {
+    const lines = [
+      `Leave plan: ${fmtLong(parse(S.start))} to ${fmtLong(parse(S.end))}`,
+      `Annual allowance: ${days(S.allowance)}`,
+      `Annual leave used: ${days(c.annualUsed)}${c.tot.half ? ` (incl. ${c.tot.half} half day${c.tot.half === 1 ? '' : 's'})` : ''}`,
+      `Annual leave remaining: ${days(S.allowance - c.annualUsed)}`,
+      `Sick leave: ${days(c.tot.sick)}`,
+      `Public holidays: ${days(c.tot.holiday)}`,
+      `Other / unpaid: ${days(c.tot.other)}`,
+      `Total days off: ${days(c.daysOff)} of ${c.working} working days`,
+    ];
+    if (c.blocks.length) {
+      lines.push('', 'Time away:');
+      c.blocks.forEach(b => lines.push(`- ${fmtRange(b.from, b.to)}: ${days(b.len)} away (${blockParts(b)})`));
+    }
+    return lines.join('\n');
+  }
+  $('#copySummary').addEventListener('click', () => {
+    const text = summaryText(compute()), fb = $('#copyFallback');
+    const fallback = () => { fb.value = text; fb.hidden = false; fb.focus(); fb.select(); setStatus('Copy is blocked here. The summary is selected below, press Ctrl+C.'); };
+    try {
+      navigator.clipboard.writeText(text).then(() => { fb.hidden = true; setStatus('Summary copied.'); }, fallback);
+    } catch (e) { fallback(); }
+  });
+
+  /* ---------- Import ---------- */
+  const byLabel = {};
+  for (const t in TYPES) { byLabel[t] = t; byLabel[TYPES[t].label.toLowerCase()] = t; }
+  $('#importCsv').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      const text = (await f.text()).replace(/^﻿/, '');
+      const marks = {};
+      for (const line of text.split(/\r?\n/)) {
+        const cols = line.split(',').map(s => s.replace(/^"|"$/g, '').trim());
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(cols[0] || '')) continue;
+        const t = byLabel[(cols[2] || '').toLowerCase()];
+        if (t) marks[cols[0]] = t;
+      }
+      const ks = Object.keys(marks).sort();
+      if (!ks.length) { setStatus('No marked days found in that file. Use a CSV downloaded from this planner.', true); return; }
+      S.marks = marks; S.example = false;
+      if (ks[0] < S.start) S.start = ks[0];
+      if (ks[ks.length - 1] > S.end) S.end = ks[ks.length - 1];
+      save(); renderControls(); renderCalendar(); renderSummary();
+      setStatus(`Loaded ${ks.length} marked day${ks.length === 1 ? '' : 's'}.`);
+    } catch (err) {
+      setStatus('Couldn’t read that file. Use a CSV downloaded from this planner.', true);
+    }
+  });
+
+  renderControls();
+  renderCalendar();
+  renderSummary();
+})();
+</script>
+</body>
+</html>
